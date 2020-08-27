@@ -12,6 +12,8 @@ import numpy as np
 import codecs
 import regex
 
+# 加载德语词频大于hp.min_cnt的词汇
+# return: word2idx 词到索引的字典，idx2word 索引到词的字典
 def load_de_vocab():
     vocab = [line.split()[0] for line in codecs.open('preprocessed/de.vocab.tsv', 'r', 'utf-8').read().splitlines() if int(line.split()[1])>=hp.min_cnt]
     word2idx = {word: idx for idx, word in enumerate(vocab)}
@@ -24,15 +26,19 @@ def load_en_vocab():
     idx2word = {idx: word for idx, word in enumerate(vocab)}
     return word2idx, idx2word
 
+# source_sents、target_sents保存了句子序列
+# return:
+#   X、Y：源和目标句子的特征向量，shape=(samples, hp.maxlen)
+#   Sources, Targets：源和目标句子，shape=(samples,)
 def create_data(source_sents, target_sents): 
-    de2idx, idx2de = load_de_vocab()
+    de2idx, idx2de = load_de_vocab() #获取word与index对应的词典
     en2idx, idx2en = load_en_vocab()
     
     # Index
     x_list, y_list, Sources, Targets = [], [], [], []
     for source_sent, target_sent in zip(source_sents, target_sents):
         x = [de2idx.get(word, 1) for word in (source_sent + u" </S>").split()] # 1: OOV, </S>: End of Text
-        y = [en2idx.get(word, 1) for word in (target_sent + u" </S>").split()] 
+        y = [en2idx.get(word, 1) for word in (target_sent + u" </S>").split()] # 1: <UNK> unkown key
         if max(len(x), len(y)) <=hp.maxlen:
             x_list.append(np.array(x))
             y_list.append(np.array(y))
@@ -48,13 +54,19 @@ def create_data(source_sents, target_sents):
     
     return X, Y, Sources, Targets
 
+# return:
+#   X，Y：训练数据的特征向量，形状分别为(samples, hp.maxlen)，(samples,)
 def load_train_data():
     de_sents = [regex.sub("[^\s\p{Latin}']", "", line) for line in codecs.open(hp.source_train, 'r', 'utf-8').read().split("\n") if line and line[0] != "<"]
     en_sents = [regex.sub("[^\s\p{Latin}']", "", line) for line in codecs.open(hp.target_train, 'r', 'utf-8').read().split("\n") if line and line[0] != "<"]
     
     X, Y, Sources, Targets = create_data(de_sents, en_sents)
     return X, Y
-    
+   
+# return：   
+#   X：特征向量， shape=(samples, hp.maxlen)
+#   Sources：源句子序列， shape=(samples, )
+#   Targets：目标句子序列， shape=(samples, )
 def load_test_data():
     def _refine(line):
         line = regex.sub("<[^>]+>", "", line)
@@ -67,6 +79,9 @@ def load_test_data():
     X, Y, Sources, Targets = create_data(de_sents, en_sents)
     return X, Sources, Targets # (1064, 150)
 
+# return:
+#   x，y：batch数据产生器，每次产生的batch数据shape=(hp.batch_size, hp.maxlen)，即(N, T)
+#   num_bacth：batch的数量，为samples/hp.batch_size
 def get_batch_data():
     # Load data
     X, Y = load_train_data()
@@ -79,7 +94,7 @@ def get_batch_data():
     Y = tf.convert_to_tensor(Y, tf.int32)
     
     # Create Queues
-    input_queues = tf.train.slice_input_producer([X, Y])
+    input_queues = tf.train.slice_input_producer([X, Y]) # queue每次输出一个sample
             
     # create batch queues
     x, y = tf.train.shuffle_batch(input_queues,
